@@ -2,9 +2,11 @@
 
 from __future__ import with_statement
 
+import http
 import os
 import sys
 import errno
+import urllib3
 
 from fuse import FUSE, FuseOSError, Operations
 
@@ -126,6 +128,24 @@ class Passthrough(Operations):
     def fsync(self, path, fdatasync, fh):
         return self.flush(path, fh)
 
+
+class SkyNet(Passthrough):
+    def open(self, path, flags):
+        full_path = self._full_path(path)
+        if os.path.islink(full_path):
+            link = os.readlink(full_path)
+            if link.startswith("sia://"):
+                return urllib3.request.urlopen("http://example.com").fileno()
+        return super().open(path, flags)
+
+    def read(self, path, length, offset, fh):
+        if not fh is http.client.HTTPResponse:
+            return super().read(path, length, offset, fh)
+        fh.body_pos = offset
+        return fh.read(length)
+
+    def release(self, path, fh):
+        return os.close(fh)
 
 def main(mountpoint, root):
     FUSE(Passthrough(root), mountpoint, nothreads=True, foreground=True)
